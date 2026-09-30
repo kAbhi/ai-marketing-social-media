@@ -16,12 +16,8 @@ client = Anthropic(api_key=my_api_key)
 
 
 # ============================================================================
-# Task 1: Design Input Parameters
-# - Define key variables: brand_voice, target_audience, campaign_type, key_message, platform, etc.
-# - Create input validation and processing logic.
-# - Structure data for optimal prompt generation.
+# Parameter Validation & Setup
 # ============================================================================
-
 def validate_and_structure_input(
         brand_name: str,
         brand_voice: str,
@@ -32,10 +28,7 @@ def validate_and_structure_input(
         call_to_action: Optional[str] = None,
         hashtags_required: bool = True
 ) -> Dict[str, str]:
-    """
-    Validates input variables and structures them into a clean dictionary
-    for downstream dynamic prompt construction.
-    """
+    """Validates inputs and structures brand guidelines."""
     inputs = {
         "brand_name": brand_name,
         "brand_voice": brand_voice,
@@ -47,7 +40,6 @@ def validate_and_structure_input(
         "hashtags_required": "Yes (3-5 relevant hashtags)" if hashtags_required else "No hashtags"
     }
 
-    # Input validation: Ensure required parameters are non-empty strings
     for field, value in inputs.items():
         if isinstance(value, str) and not value.strip():
             raise ValueError(f"Input validation error: '{field}' cannot be empty.")
@@ -56,107 +48,92 @@ def validate_and_structure_input(
 
 
 # ============================================================================
-# Task 2: Implement Dynamic Prompt Generation
-# - Create prompts incorporating validated user inputs.
-# - Include explicit context regarding brand voice and audience.
-# - Specify concrete output format, constraints, and platform style requirements.
+# Multi-Turn Dialogue Manager
 # ============================================================================
-
-def generate_dynamic_prompt(params: Dict[str, str]) -> str:
+class SocialMediaDialogueSession:
     """
-    Builds a structured dynamic prompt incorporating all brand guidelines,
-    audience details, campaign goals, and output requirements.
+    Manages multi-turn conversation state, system prompt anchoring,
+    and iterative refinement of social media copy.
     """
-    prompt = f"""You are an expert social media strategist and copywriter. Generate a high-performing social media post based on the following brand parameters and campaign objectives:
+    def __init__(self, brand_params: Dict[str, str], model: str = "claude-opus-5", max_history_turns: int = 10):
+        self.brand_params = brand_params
+        self.model = model
+        self.max_history_turns = max_history_turns
+        self.messages: List[Dict[str, str]] = []
 
-<campaign_parameters>
-- Brand Name: {params['brand_name']}
-- Brand Voice / Tone: {params['brand_voice']}
-- Target Audience: {params['target_audience']}
-- Campaign Type: {params['campaign_type']}
-- Key Message: {params['key_message']}
-- Destination Platform: {params['platform']}
-- Call to Action (CTA): {params['call_to_action']}
-- Hashtag Requirement: {params['hashtags_required']}
-</campaign_parameters>
+    def _build_system_prompt(self) -> str:
+        """Anchors brand voice and format rules as immutable system context."""
+        return f"""You are an expert social media copywriter and brand strategist working on a live revision session.
 
-<instructions>
-1. Match the exact tone and style of the specified brand voice.
-2. Tailor language, hooks, and pacing directly to the target audience.
-3. Optimize formatting (line breaks, hook, CTA placement) specifically for {params['platform']}.
-4. Present the output strictly in the following format:
+<brand_guidelines>
+- Brand Name: {self.brand_params['brand_name']}
+- Core Voice & Tone: {self.brand_params['brand_voice']}
+- Target Audience: {self.brand_params['target_audience']}
+- Campaign Objective: {self.brand_params['campaign_type']}
+- Key Message: {self.brand_params['key_message']}
+- Platform: {self.brand_params['platform']}
+- Target CTA: {self.brand_params['call_to_action']}
+- Hashtags: {self.brand_params['hashtags_required']}
+</brand_guidelines>
 
+<formatting_rules>
+When drafting or revising posts, output the final post using these structural slots:
 [HOOK / HEADLINE]
-<attention-grabbing opening line>
+<opening hook>
 
 [BODY]
-<engaging core post content reinforcing the key message>
+<core copy reinforcing key message>
 
 [CALL TO ACTION]
-<clear CTA directive>
+<clear directive>
 
 [HASHTAGS]
-<comma-separated hashtags if required, otherwise omit>
-</instructions>
+<relevant hashtags or omit if requested>
+</formatting_rules>
 
-Provide only the formatted post content without extra conversational filler.
-"""
-    return prompt.strip()
+Adhere strictly to the brand voice across all revisions. If the user asks for iterative tweaks (e.g., tone shifts, shorter lengths, or alternate angles), adjust accordingly while keeping the core identity intact."""
 
+    def _trim_history(self) -> None:
+        """Sliding window: retains the most recent turns to maintain token efficiency."""
+        # Keep the latest N message pairs (user + assistant)
+        max_messages = self.max_history_turns * 2
+        if len(self.messages) > max_messages:
+            self.messages = self.messages[-max_messages:]
 
-# ============================================================================
-# Task 3: Build Response Processing
-# - Implement API call with the dynamic prompt.
-# - Process Claude's response for consistency.
-# - Format output cleanly for social media deployment/review.
-# ============================================================================
+    def send_turn(self, user_instruction: str) -> str:
+        """
+        Processes a user turn, appends it to conversation history,
+        calls the Anthropic API, and captures the assistant response.
+        """
+        self.messages.append({"role": "user", "content": user_instruction})
+        self._trim_history()
 
-def generate_social_post(params: Dict[str, str], model: str = "claude-opus-5") -> Dict[str, str]:
-    """
-    Executes the Anthropic Messages API call using the generated dynamic prompt,
-    parses the response, and formats the output for client review.
-    """
-    prompt = generate_dynamic_prompt(params)
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=800,
+            system=self._build_system_prompt(),
+            messages=self.messages
+        )
 
-    # API Integration
-    response = client.messages.create(
-        model=model,
-        max_tokens=600,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
+        assistant_reply = response.content[1].text.strip()
+        self.messages.append({"role": "assistant", "content": assistant_reply})
+        return assistant_reply
 
-    raw_text = response.content[0].text.strip()
-
-    # Response processing and structure verification
-    return {
-        "platform": params["platform"],
-        "brand": params["brand_name"],
-        "campaign_type": params["campaign_type"],
-        "generated_post": raw_text,
-        "input_summary": f"Voice: '{params['brand_voice']}' | Audience: '{params['target_audience']}'"
-    }
-
-
-def display_post(result: Dict[str, str]) -> None:
-    """Utility to print processed social media post cleanly."""
-    separator = "=" * 60
-    print(f"\n{separator}")
-    print(f"BRAND: {result['brand']} | PLATFORM: {result['platform']}")
-    print(f"CONFIG: {result['input_summary']}")
-    print(separator)
-    print(result["generated_post"])
-    print(f"{separator}\n")
+    def start_campaign(self) -> str:
+        """Initial turn: generates the initial baseline post."""
+        initial_prompt = (
+            f"Generate the initial social media post for {self.brand_params['platform']} "
+            f"reinforcing our key message: '{self.brand_params['key_message']}'."
+        )
+        return self.send_turn(initial_prompt)
 
 
 # ============================================================================
-# Execution & Example Outputs Demonstrating Different Brand Voices
+# Interactive Terminal Runner (CLI)
 # ============================================================================
-
-if __name__ == "__main__":
-    # Example 1: B2B Enterprise / Thought Leadership Voice
-    tech_b2b_campaign = validate_and_structure_input(
+def run_interactive_session():
+    # 1. Define initial campaign parameters
+    campaign_config = validate_and_structure_input(
         brand_name="CloudScale Systems",
         brand_voice="Authoritative, analytical, visionary, and professional",
         target_audience="CTOs, VP of Engineering, and Cloud Architects",
@@ -167,22 +144,38 @@ if __name__ == "__main__":
         hashtags_required=True
     )
 
-    # Example 2: D2C Lifestyle / Casual & Energetic Voice
-    d2c_lifestyle_campaign = validate_and_structure_input(
-        brand_name="BrewRoots Coffee Co.",
-        brand_voice="Playful, energetic, relatable, and community-driven",
-        target_audience="Young professionals and remote workers who need a morning boost",
-        campaign_type="Limited Edition Seasonal Drop",
-        key_message="Cold brew concentrate infused with organic Madagascar vanilla is back in stock.",
-        platform="Instagram",
-        call_to_action="Tap the link in bio to grab your bottle before it sells out!",
-        hashtags_required=True
-    )
+    # 2. Initialize dialogue manager
+    session = SocialMediaDialogueSession(brand_params=campaign_config)
 
-    print("Generating Campaign 1: B2B Enterprise...")
-    result_1 = generate_social_post(tech_b2b_campaign)
-    display_post(result_1)
+    print("=" * 70)
+    print(f" Starting session for: {campaign_config['brand_name']} ({campaign_config['platform']})")
+    print(" Type your refinement commands (e.g., 'Make the hook punchier', 'Shorter').")
+    print(" Type 'exit' or 'quit' to end the session.")
+    print("=" * 70)
 
-    print("Generating Campaign 2: D2C Lifestyle...")
-    result_2 = generate_social_post(d2c_lifestyle_campaign)
-    display_post(result_2)
+    # 3. Generate initial post (Turn 1)
+    print("\n[Generating Initial Post...]\n")
+    initial_post = session.start_campaign()
+    print(f"Claude:\n{initial_post}\n")
+
+    # 4. Multi-turn dialogue loop
+    while True:
+        try:
+            user_input = input("You (revision / feedback) > ").strip()
+            if not user_input:
+                continue
+            if user_input.lower() in ("exit", "quit", "q"):
+                print("\nEnding session. Happy publishing!")
+                break
+
+            print("\n[Revising with Claude...]\n")
+            reply = session.send_turn(user_input)
+            print(f"Claude:\n{reply}\n")
+
+        except KeyboardInterrupt:
+            print("\nSession interrupted. Exiting.")
+            break
+
+
+if __name__ == "__main__":
+    run_interactive_session()
