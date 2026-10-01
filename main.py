@@ -110,7 +110,7 @@ Adhere strictly to the brand voice across all revisions. If the user asks for it
 
         response = client.messages.create(
             model=self.model,
-            max_tokens=800,
+            max_tokens=1000,
             system=self._build_system_prompt(),
             messages=self.messages
         )
