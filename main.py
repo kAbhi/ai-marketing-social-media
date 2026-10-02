@@ -132,16 +132,35 @@ Adhere strictly to the brand voice across all revisions. If the user asks for it
 # Interactive Terminal Runner (CLI)
 # ============================================================================
 def run_interactive_session():
-    # 1. Define initial campaign parameters
+    # 1. Define initial campaign parameters from user input
+    print("=" * 70)
+    print(" Enter Initial Campaign Parameters:")
+    print("=" * 70)
+
+    brand_name = input("Enter Brand Name (e.g., CloudScale Systems): ").strip()
+    brand_voice = input("Enter Brand Voice/Tone (e.g., Authoritative, analytical, visionary): ").strip()
+    target_audience = input("Enter Target Audience (e.g., CTOs, VP of Engineering, Cloud Architects): ").strip()
+    campaign_type = input("Enter Campaign Type (e.g., Product Launch / Thought Leadership): ").strip()
+    key_message = input("Enter Key Message (e.g., Our new distributed data mesh reduces latency by 45%): ").strip()
+
+    platform_input = input("Enter Platform [default: LinkedIn]: ").strip()
+    platform = platform_input if platform_input else "LinkedIn"
+
+    cta_input = input("Enter Call to Action [default: Learn more through the link below.]: ").strip()
+    call_to_action = cta_input if cta_input else None
+
+    hashtags_input = input("Include Hashtags? (yes/no) [default: yes]: ").strip().lower()
+    hashtags_required = hashtags_input not in ("no", "n", "false")
+
     campaign_config = validate_and_structure_input(
-        brand_name="CloudScale Systems",
-        brand_voice="Authoritative, analytical, visionary, and professional",
-        target_audience="CTOs, VP of Engineering, and Cloud Architects",
-        campaign_type="Product Launch / Thought Leadership",
-        key_message="Our new distributed data mesh reduces cross-region query latency by 45%.",
-        platform="LinkedIn",
-        call_to_action="Read the technical whitepaper and benchmarks",
-        hashtags_required=True
+        brand_name=brand_name,
+        brand_voice=brand_voice,
+        target_audience=target_audience,
+        campaign_type=campaign_type,
+        key_message=key_message,
+        platform=platform,
+        call_to_action=call_to_action,
+        hashtags_required=hashtags_required
     )
 
     # 2. Initialize dialogue manager
